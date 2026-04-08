@@ -58,4 +58,5 @@ class Interpreter:
         """
         logger.info("Executing program")
         # TODO: Your logic goes here.
-
+        print("Program bol úspešne načítaný!")
+        #print(self.current_program)

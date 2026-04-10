@@ -58,5 +58,19 @@ class Interpreter:
         """
         logger.info("Executing program")
         # TODO: Your logic goes here.
-        print("Program bol úspešne načítaný!")
-        #print(self.current_program)
+        main_class = None
+        for cl in self.current_program.classes:
+            if cl.name == "Main":
+                main_class = cl
+                break
+        if main_class is None:
+            exit(31)
+        run_method = None
+        for method in main_class.methods:
+            if method.selector == "run":
+                run_method = method
+                break
+        if run_method is None:
+            exit(31)
+
+        # print(self.current_program)

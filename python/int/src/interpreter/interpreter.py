@@ -71,6 +71,15 @@ class Interpreter:
                 break
         if run_method is None:
             ErrorCode.fire(ErrorCode.SEM_MAIN, "Missing run method in Main!")
+        
+        frame = {}
+
+        for stmt in run_method.block.assigns:
+            frame[stmt.target.name] = self.eval_expr(stmt.expr, frame)
+            
+
+        for name in frame:
+            print(f"{name} = {frame[name]}")
 
         # print(self.current_program)
 
@@ -117,4 +126,50 @@ class Interpreter:
             print()
         """
 
-            
+    def eval_expr(self, expr, frame):
+        # --- LITERAL ---
+        if expr.literal is not None:
+            return expr.literal.value
+
+        # --- VAR ---
+        if expr.var is not None:
+            name = expr.var.name
+            if name not in frame:
+                ErrorCode.fire(ErrorCode.SEM_UNDEF, "Missing definition of variable!")
+            return frame[name]
+        
+        # -- BLOCK --
+        if expr.block is not None:
+            return BlockInstance(expr.block, frame)
+
+        # --- SEND ---
+        if expr.send is not None:
+            send = expr.send
+            receiver = self.eval_expr(send.receiver, frame)
+
+            # --- new ---
+            if send.selector == "new":
+                class_names = {cls.name for cls in self.current_program.classes}
+
+                if receiver not in class_names:
+                    ErrorCode.fire(ErrorCode.SEM_UNDEF, "Missing definition of class!")
+
+                return Instance(receiver)
+            return send.selector
+
+class Instance:
+    def __init__(self, cls_name):
+        self.cls_name = cls_name
+        self.attributes = {}
+
+    def __repr__(self):
+        return f"instance of {self.cls_name}"
+    
+class BlockInstance:
+    def __init__(self, block, parent_frame):
+        self.block = block
+        self.parent_frame = parent_frame
+
+    def __repr__(self):
+        return "<block>"
+    

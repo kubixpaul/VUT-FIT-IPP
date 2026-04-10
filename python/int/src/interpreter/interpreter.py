@@ -57,20 +57,64 @@ class Interpreter:
         Executes the currently loaded program, using the provided input stream as standard input.
         """
         logger.info("Executing program")
-        # TODO: Your logic goes here.
         main_class = None
         for cl in self.current_program.classes:
             if cl.name == "Main":
                 main_class = cl
                 break
         if main_class is None:
-            exit(31)
+            ErrorCode.fire(ErrorCode.SEM_MAIN, "Missing Main class in program!")
         run_method = None
         for method in main_class.methods:
             if method.selector == "run":
                 run_method = method
                 break
         if run_method is None:
-            exit(31)
+            ErrorCode.fire(ErrorCode.SEM_MAIN, "Missing run method in Main!")
 
         # print(self.current_program)
+
+        """"
+        for stmt in run_method.block.assigns:
+            print(f"Assign order={stmt.order}")
+            print(f"  target = {stmt.target.name}")
+
+            expr = stmt.expr
+            print("  expr:")
+
+            if expr.literal is not None:
+                print(f"    literal: class={expr.literal.class_id}, value={expr.literal.value}")
+
+            elif expr.var is not None:
+                print(f"    var: {expr.var.name}")
+
+            elif expr.block is not None:
+                print(f"    block: arity={expr.block.arity}")
+                print(f"      parameters: {[p.name for p in expr.block.parameters]}")
+                print(f"      assigns: {len(expr.block.assigns)} inner assigns")
+
+            elif expr.send is not None:
+                send = expr.send
+                print(f"    send: selector={send.selector}")
+                print("      receiver:")
+                if send.receiver.var:
+                    print(f"        var: {send.receiver.var.name}")
+                elif send.receiver.literal:
+                    print(f"        literal: {send.receiver.literal.value}")
+                elif send.receiver.send:
+                    print(f"        nested send: {send.receiver.send.selector}")
+
+                print("      args:")
+                for arg in send.args:
+                    print(f"        arg order={arg.order}:")
+                    if arg.expr.literal:
+                        print(f"          literal: {arg.expr.literal.value}")
+                    elif arg.expr.var:
+                        print(f"          var: {arg.expr.var.name}")
+                    elif arg.expr.send:
+                        print(f"          send: {arg.expr.send.selector}")
+
+            print()
+        """
+
+            

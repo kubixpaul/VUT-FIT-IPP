@@ -85,9 +85,9 @@ class Interpreter:
 
         #self.execute_method(run_method)
 
-        # print(self.current_program)
+        print(self.current_program)
 
-        
+        """
         for stmt in run_method.block.assigns:
             print(f"Assign order={stmt.order}")
             print(f"  target = {stmt.target.name}")
@@ -128,7 +128,7 @@ class Interpreter:
                         print(f"          send: {arg.expr.send.selector}")
 
             print()
-        
+        """
 
     def eval_expr(self, expr, frame):
         # --- LITERAL ---

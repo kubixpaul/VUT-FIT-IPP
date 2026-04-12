@@ -18,6 +18,7 @@ from pydantic import ValidationError
 from interpreter.error_codes import ErrorCode
 from interpreter.exceptions import InterpreterError
 from interpreter.input_model import Program
+import interpreter.built_in as Builtins
 
 logger = logging.getLogger(__name__)
 
@@ -71,19 +72,12 @@ class Interpreter:
                 break
         if run_method is None:
             ErrorCode.fire(ErrorCode.SEM_MAIN, "Missing run method in Main!")
-        
-        frame = {}
 
-        for stmt in run_method.block.assigns:
-            frame[stmt.target.name] = self.eval_expr(stmt.expr, frame)
-            
-
-        for name in frame:
-            print(f"{name} = {frame[name]}")
+        self.execute_method(run_method)
 
         # print(self.current_program)
 
-        """"
+        """
         for stmt in run_method.block.assigns:
             print(f"Assign order={stmt.order}")
             print(f"  target = {stmt.target.name}")
@@ -140,7 +134,7 @@ class Interpreter:
         
         # -- BLOCK --
         if expr.block is not None:
-            return BlockInstance(expr.block, frame)
+            return BlockInstance(expr.block)
 
         # --- SEND ---
         if expr.send is not None:
@@ -149,26 +143,56 @@ class Interpreter:
 
             # --- new ---
             if send.selector == "new":
-                class_names = {cls.name for cls in self.current_program.classes}
+                for cl in self.current_program.classes:
+                    if receiver == cl.name:
+                        return ClassInstance(cl)
+                ErrorCode.fire(ErrorCode.SEM_UNDEF, "Missing definition of class!")
 
-                if receiver not in class_names:
-                    ErrorCode.fire(ErrorCode.SEM_UNDEF, "Missing definition of class!")
-
-                return Instance(receiver)
+            if isinstance(receiver, ClassInstance):
+                method = receiver.find_method(send.selector, self.current_program.classes)
+                if method is None:
+                    return send.selector
+                    ErrorCode.fire(ErrorCode.SEM_UNDEF, "Missing definition of method!")
+                return self.execute_method(method)
             return send.selector
+        
+    def execute_method(self, method):
+        result = None
+        frame = {}
+        for stmt in method.block.assigns:
+            result = self.eval_expr(stmt.expr, frame)
+            frame[stmt.target.name] = result
 
-class Instance:
-    def __init__(self, cls_name):
-        self.cls_name = cls_name
+        for name in frame:
+            print(f"{name} = {frame[name]}")
+        return result
+
+class ClassInstance:
+    def __init__(self, cl):
+        self.cl = cl
+        self.cl_name = cl.name
         self.attributes = {}
 
+    def find_method(self, selector, all_classes):
+        current = self.cl
+        while current is not None:
+            for method in current.methods:
+                if method.selector == selector:
+                    return method
+            parent = current.parent
+            current = None
+            for cl in all_classes:
+                if cl.name == parent:
+                    current = cl
+                    break
+        return None
+
     def __repr__(self):
-        return f"instance of {self.cls_name}"
+        return f"instance of {self.cl_name}"
     
 class BlockInstance:
-    def __init__(self, block, parent_frame):
+    def __init__(self, block):
         self.block = block
-        self.parent_frame = parent_frame
 
     def __repr__(self):
         return "<block>"

@@ -88,169 +88,166 @@ class Interpreter:
         self.execute_method(run_method, main_class_instance, args=None)
 
     def eval_expr(self, expr, frame, current_class):
-        # --- LITERAL ---
         if expr.literal is not None:
-            lit = expr.literal
-
-            if lit.class_id == "Integer":
-                return Builtins.SOLInteger(int(lit.value))
-
-            if lit.class_id == "String":
-                return Builtins.SOLString(lit.value)
-
-            if lit.class_id == "Nil":
-                return Builtins.nil
-
-            if lit.class_id == "True":
-                return Builtins.SOLTrue()
-
-            if lit.class_id == "False":
-                return Builtins.SOLFalse()
-            
-            if lit.class_id == "class":
-                return lit.value
-
-        # --- VAR ---
+            return self.eval_literal(expr.literal)
         if expr.var is not None:
-            name = expr.var.name
-            if name == "self":
-                return frame["self"]
-            
-            if name == "super":
-                return frame["super"]
-
-            if name not in frame:
-                ErrorCode.fire(ErrorCode.SEM_UNDEF, "Missing definition of variable!")
-            return frame[name]
-        
-        # -- BLOCK --
+            return self.eval_var(expr.var, frame)
         if expr.block is not None:
             return BlockInstance(expr.block, frame)
-
-        # --- SEND ---
         if expr.send is not None:
-            send = expr.send
-            is_super = False
-            if send.receiver.var is not None and send.receiver.var.name == "super":
-                is_super = True
-            receiver = self.eval_expr(send.receiver, frame, current_class)
-            
-            args = []
-            for arg in send.args:
-                args.append(self.eval_expr(arg.expr, frame, current_class))
+            return self.eval_send(expr.send, frame, current_class)
+        return Builtins.nil
+    
+    def eval_literal(self, lit):
+        if lit.class_id == "Integer":
+            return Builtins.SOLInteger(int(lit.value))
+        if lit.class_id == "String":
+            return Builtins.SOLString(lit.value)
+        if lit.class_id == "Nil":
+            return Builtins.nil
+        if lit.class_id == "True":
+            return Builtins.SOLTrue()
+        if lit.class_id == "False":
+            return Builtins.SOLFalse()
+        if lit.class_id == "class":
+            return lit.value
+        return Builtins.nil
+    
+    def eval_var(self, var, frame):
+        name = var.name
+        if name in ("self", "super"):
+            return frame[name]
+        if name not in frame:
+            ErrorCode.fire(ErrorCode.SEM_UNDEF, f"Undefined variable: {name}")
+        return frame[name]
+    
+    def eval_send(self, send, frame, current_class):
+        is_super = (
+            send.receiver.var is not None and
+            send.receiver.var.name == "super"
+        )
+        receiver = self.eval_expr(send.receiver, frame, current_class)
+        args = [self.eval_expr(arg.expr, frame, current_class) for arg in send.args]
 
-            # --- new ---
-            if send.selector == "new":
-                if receiver in self.builtin_classes:
-                    cls = self.builtin_classes[receiver]
+        # class messages
+        if isinstance(receiver, str):
+            return self.dispatch_class_message(receiver, send.selector, args)
 
-                    if receiver == "Integer":
-                        return cls(0)
-                    if receiver == "String":
-                        return cls("")
-                    if receiver == "Nil":
-                        return Builtins.nil
+        # block messages
+        if isinstance(receiver, BlockInstance):
+            return self.dispatch_block(receiver, send.selector, args, current_class)
 
-                    return cls()
+        # instance messages
+        if isinstance(receiver, ClassInstance):
+            return self.dispatch_instance(receiver, send.selector, args, current_class, is_super)
 
-                for cl in self.current_program.classes:
-                    if receiver == cl.name:
-                        return ClassInstance(cl)
-                ErrorCode.fire(ErrorCode.SEM_UNDEF, "Missing definition of class!")
-            
-            if send.selector == "read" and receiver == "String":
-                line = self.input_io.readline()
-                if line.endswith("\n"):
-                    line = line[:-1]
-                return Builtins.SOLString(line)
+        # builtin messages
+        return self.dispatch_builtin(receiver, send.selector, args, current_class)
+    
+    def dispatch_class_message(self, class_name, selector, args):
+        if selector == "new":
+            if class_name in self.builtin_classes:
+                cls = self.builtin_classes[class_name]
+                if class_name == "Integer":
+                    return cls(0)
+                if class_name == "String":
+                    return cls("")
+                if class_name == "Nil":
+                    return Builtins.nil
+                return cls()
+            # User defined classes
+            for cl in self.current_program.classes:
+                if class_name == cl.name:
+                    return ClassInstance(cl)
 
-            if isinstance(receiver, BlockInstance):
-                if send.selector == "value":
-                    return self.execute_block(receiver, current_class, [])
-                if send.selector == "value:" and len(args) == 1:
-                    return self.execute_block(receiver, current_class, args)
-                if send.selector == "value:value:" and len(args) == 2:
-                    return self.execute_block(receiver, current_class, args)
-                ErrorCode.fire(ErrorCode.INT_DNU, "Block does not understand")
+        # Missing 'from:' functionality
 
-            if isinstance(receiver, ClassInstance):
-                if is_super is True:
-                    method = receiver.find_method_from_parent(send.selector, self.current_program.classes, current_class)
-                else:
-                    method = receiver.find_method(send.selector, self.current_program.classes)
-                if method is None:
-                    base_name = receiver.get_base(self.current_program.classes)
-                    builtin_class = self.builtin_classes[base_name]
-                    method_name = send.selector.replace(":", "_")
-                    if method_name == "print":
-                        method_name = "print_"
+        if selector == "read" and class_name == "String":
+            line = self.input_io.readline()
+            if line.endswith("\n"):
+                line = line[:-1]
+            return Builtins.SOLString(line)
+        
+    def dispatch_block(self, receiver, selector, args, current_class):
+        if selector == "value":
+            return self.execute_block(receiver, current_class, [])
+        if selector == "value:" and len(args) == 1:
+            return self.execute_block(receiver, current_class, args)
+        if selector == "value:value:" and len(args) == 2:
+            return self.execute_block(receiver, current_class, args)
+        
+    def dispatch_instance(self, receiver, selector, args, current_class, is_super):
+        if is_super:
+            method = receiver.find_method_from_parent(selector, self.current_program.classes, current_class)
+        else:
+            method = receiver.find_method(selector, self.current_program.classes)
 
-                    method = getattr(builtin_class(), method_name, None)
-                    if method is not None:
-                        return method(*args)
+        if method is not None:
+            return self.execute_method(method, receiver, args)
+        
+        base_name = receiver.get_base(self.current_program.classes)
+        builtin_class = self.builtin_classes[base_name]
+        result = self.try_builtin(builtin_class(), selector, args, current_class)
+        if result is not None:
+            return result
+        
+        return self.attribute_fallback(receiver, selector, args)
+    
+    def dispatch_builtin(self, receiver, selector, args, current_class):
+        result = self.try_builtin(receiver, selector, args, current_class)
+        if result is not None:
+            return result
 
-                    if len(args) == 0:
-                        val = receiver.attributes.get(send.selector)
-                        if val is None:
-                            ErrorCode.fire(ErrorCode.INT_DNU, f"No method or attribute with name '{send.selector}' found!")
-                        return val
-                    elif len(args) == 1:
-                        attr_name = send.selector.rstrip(":")
-                        collision = receiver.find_method(attr_name, self.current_program.classes)
-                        if collision is not None:
-                            ErrorCode.fire(ErrorCode.INT_DNU, f"Attribute '{attr_name}' collides with method")
-                        
-                        base_name = receiver.get_base(self.current_program.classes)
-                        builtin_class = self.builtin_classes[base_name]
-                        if getattr(builtin_class(), attr_name, None) is not None:
-                            ErrorCode.fire(ErrorCode.INT_INST_ATTR, f"Attribute '{attr_name}' collides with builtin method")
-                        receiver.attributes[attr_name] = args[0]
-                        return receiver
-                    else:
-                        ErrorCode.fire(ErrorCode.INT_DNU, "Missing definition of method!")
-                return self.execute_method(method, receiver, args)
-            
-            # Boolean ifTrue:ifFalse:, and:, or:
-            if isinstance(receiver, (Builtins.SOLTrue, Builtins.SOLFalse)):
-                if send.selector == "ifTrue:ifFalse:" and len(args) == 2:
-                    if isinstance(receiver, Builtins.SOLTrue):
-                        return self.execute_block(args[0], current_class, [])
-                    else:
-                        return self.execute_block(args[1], current_class, [])
+    def try_builtin(self, receiver, selector, args, current_class):
+        # Boolean ifTrue ifFalse
+        if isinstance(receiver, (Builtins.SOLTrue, Builtins.SOLFalse)):
+            if selector == "ifTrue:ifFalse:" and len(args) == 2:
+                if isinstance(receiver, Builtins.SOLTrue):
+                    return self.execute_block(args[0], current_class, [])
+                return self.execute_block(args[1], current_class, [])
 
-            # Integer timesRepeat:
-            if isinstance(receiver, Builtins.SOLInteger):
-                if send.selector == "timesRepeat:" and len(args) == 1:
-                    result = Builtins.nil
-                    for i in range(1, receiver.value + 1):
-                        result = self.execute_block(args[0], current_class, [Builtins.SOLInteger(i)])
-                    return result
+        # Integer timesRepeat:
+        if isinstance(receiver, Builtins.SOLInteger):
+            if selector == "timesRepeat:" and len(args) == 1:
+                result = Builtins.nil
+                for i in range(1, receiver.value + 1):
+                    result = self.execute_block(args[0], current_class, [Builtins.SOLInteger(i)])
+                return result
 
-            # Block whileTrue:
-            if isinstance(receiver, BlockInstance):
-                if send.selector == "whileTrue:" and len(args) == 1:
-                    result = Builtins.nil
-                    while True:
-                        cond = self.execute_block(receiver, current_class, [])
-                        if not isinstance(cond, Builtins.SOLTrue):
-                            break
-                        result = self.execute_block(args[0], current_class, [])
-                    return result
+        method_name = selector.replace(":", "_")
+        if selector == "print":
+            method_name = "print_"
+        
+        if selector == "not":
+            method_name = "not_"
 
-            if isinstance(receiver, (Builtins.SOLString, Builtins.SOLInteger, 
-                          Builtins.SOLTrue, Builtins.SOLFalse, 
-                          Builtins.SOLNil, Builtins.SOLObject)):
-                method_name = send.selector.replace(":", "_")
-                if send.selector == "print":
-                    method_name = "print_"
+        method = getattr(receiver, method_name, None)
+        if method is not None:
+            return method(*args)
 
-                if send.selector == "not":
-                    method_name = "not_"
-                
-                method = getattr(receiver, method_name, None)
-                if method is not None:
-                    return method(*args)
-            return send.selector
+        return None
+    
+    def attribute_fallback(self, receiver, selector, args):
+        if len(args) == 0:
+            val = receiver.attributes.get(selector)
+            if val is None:
+                ErrorCode.fire(ErrorCode.INT_DNU, f"No method or attribute '{selector}'!")
+            return val
+
+        if len(args) == 1:
+            attr_name = selector.rstrip(":")
+            collision = receiver.find_method(attr_name, self.current_program.classes)
+            if collision is not None:
+                ErrorCode.fire(ErrorCode.INT_INST_ATTR, f"Attribute '{attr_name}' collides with method!")
+            base_name = receiver.get_base(self.current_program.classes)
+            builtin_class = self.builtin_classes[base_name]
+
+            if getattr(builtin_class(), attr_name, None) is not None:
+                ErrorCode.fire(ErrorCode.INT_INST_ATTR, f"Attribute '{attr_name}' collides with builtin method!")
+            receiver.attributes[attr_name] = args[0]
+            return receiver
+        
+        ErrorCode.fire(ErrorCode.INT_DNU, f"No method '{selector}!'")
         
     def execute_method(self, method, current_class, args):
         if args is None:
@@ -271,7 +268,7 @@ class Interpreter:
         
         params = block_instance.block.parameters
         if len(params) != len(args):
-            ErrorCode.fire(ErrorCode.INT_DNU, f"Block arity mismatch")
+            ErrorCode.fire(ErrorCode.INT_DNU, f"Block arity mismatch!")
         
         param_names = {p.name for p in params}
         for param, arg in zip(params, args):

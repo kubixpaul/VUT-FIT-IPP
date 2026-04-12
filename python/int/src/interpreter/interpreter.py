@@ -57,6 +57,7 @@ class Interpreter:
         Executes the currently loaded program, using the provided input stream as standard input.
         """
         logger.info("Executing program")
+        self.input_io = input_io
 
         self.builtin_classes = {
             "Object": Builtins.SOLObject,
@@ -85,7 +86,7 @@ class Interpreter:
 
 
         main_class_instance = ClassInstance(main_class)
-        self.execute_method(run_method, main_class_instance)
+        self.execute_method(run_method, main_class_instance, args=None)
 
         # print(self.current_program)
 
@@ -103,7 +104,7 @@ class Interpreter:
             elif expr.var is not None:
                 print(f"    var: {expr.var.name}")
 
-            elif expr.block is not None:
+            elif expr.f is not None:
                 print(f"    block: arity={expr.block.arity}")
                 print(f"      parameters: {[p.name for p in expr.block.parameters]}")
                 print(f"      assigns: {len(expr.block.assigns)} inner assigns")
@@ -170,7 +171,7 @@ class Interpreter:
         
         # -- BLOCK --
         if expr.block is not None:
-            return BlockInstance(expr.block)
+            return BlockInstance(expr.block, frame)
 
         # --- SEND ---
         if expr.send is not None:
@@ -202,10 +203,25 @@ class Interpreter:
                     if receiver == cl.name:
                         return ClassInstance(cl)
                 ErrorCode.fire(ErrorCode.SEM_UNDEF, "Missing definition of class!")
+            
+            if send.selector == "read" and receiver == "String":
+                line = self.input_io.readline()
+                if line.endswith("\n"):
+                    line = line[:-1]
+                return Builtins.SOLString(line)
+
+            if isinstance(receiver, BlockInstance):
+                if send.selector == "value":
+                    return self.execute_block(receiver, current_class, [])
+                if send.selector == "value:" and len(args) == 1:
+                    return self.execute_block(receiver, current_class, args)
+                if send.selector == "value:value:" and len(args) == 2:
+                    return self.execute_block(receiver, current_class, args)
+                ErrorCode.fire(ErrorCode.INT_DNU, "Block does not understand")
 
             if isinstance(receiver, ClassInstance):
                 if is_super is True:
-                    method = receiver.find_method_from_parent(send.selector, self.current_program.classes)
+                    method = receiver.find_method_from_parent(send.selector, self.current_program.classes, current_class)
                 else:
                     method = receiver.find_method(send.selector, self.current_program.classes)
                 if method is None:
@@ -238,20 +254,51 @@ class Interpreter:
                         return receiver
                     else:
                         ErrorCode.fire(ErrorCode.INT_DNU, "Missing definition of method!")
-                return self.execute_method(method)
+                return self.execute_method(method, receiver, args)
+            
+            if isinstance(receiver, (Builtins.SOLString, Builtins.SOLInteger, 
+                          Builtins.SOLTrue, Builtins.SOLFalse, 
+                          Builtins.SOLNil, Builtins.SOLObject)):
+                method_name = send.selector.replace(":", "_")
+                if send.selector == "print":
+                    method_name = "print_"
+                
+                method = getattr(receiver, method_name, None)
+                if method is not None:
+                    return method(*args)
             return send.selector
         
-    def execute_method(self, method, current_class):
-        result = None
+    def execute_method(self, method, current_class, args):
+        if args is None:
+            args = []
         frame = {}
         frame["self"] = current_class
         frame["super"] = current_class
-        for stmt in method.block.assigns:
+        
+        result = Builtins.nil
+
+        method_block = BlockInstance(method.block, frame)
+
+        result = self.execute_block(method_block, current_class, args)
+        return result
+
+    def execute_block(self, block_instance, current_class, args):
+        frame = dict(block_instance.parent_frame)
+        
+        params = block_instance.block.parameters
+        if len(params) != len(args):
+            ErrorCode.fire(ErrorCode.INT_DNU, f"Block arity mismatch")
+        
+        param_names = {p.name for p in params}
+        for param, arg in zip(params, args):
+            frame[param.name] = arg
+        
+        result = Builtins.nil
+        for stmt in block_instance.block.assigns:
+            if stmt.target.name in param_names:
+                ErrorCode.fire(ErrorCode.SEM_COLLISION, f"Assignment to parameter {stmt.target.name}")
             result = self.eval_expr(stmt.expr, frame, current_class)
             frame[stmt.target.name] = result
-
-        #for name in frame:
-        #    print(f"{name} = {frame[name]}")
         return result
 
 class ClassInstance:
@@ -274,8 +321,18 @@ class ClassInstance:
                     break
         return None
     
-    def find_method_from_parent(self, selector, all_classes):
-        start_parent = self.cl.parent
+    def find_method_from_parent(self, selector, all_classes, from_class):
+        start_class = None
+        for cl in all_classes:
+            if cl.name == from_class:
+                start_class = cl
+                break
+        
+        if start_class is None:
+            return None
+        
+        start_parent = start_class
+
         parent_class = None
         for cl in all_classes:
             if cl.name == start_parent:
@@ -310,8 +367,9 @@ class ClassInstance:
         return f"instance of {self.cl_name}"
     
 class BlockInstance:
-    def __init__(self, block):
+    def __init__(self, block, parent_frame):
         self.block = block
+        self.parent_frame = parent_frame
 
     def __repr__(self):
         return "<block>"

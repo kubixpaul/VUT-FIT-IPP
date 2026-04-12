@@ -120,7 +120,7 @@ class SOLInteger(SOLObject):
 
     def divBy_(self, other):
         if other.value == 0:
-            ErrorCode.fire(ErrorCode.SEM_ZERO_DIV, "Division by zero!")
+            ErrorCode.fire(ErrorCode.INT_INVALID_ARG, "Division by zero!")
         return SOLInteger(self.value // other.value)
 
     def greaterThan_(self, other):
@@ -144,7 +144,7 @@ class SOLString(SOLObject):
     def isString(self):
         return SOLTrue()
 
-    def print(self):
+    def print_(self):
         print(self.value, end="")
         return self
 

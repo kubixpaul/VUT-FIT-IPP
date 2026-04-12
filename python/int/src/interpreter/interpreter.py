@@ -22,7 +22,6 @@ import interpreter.built_in as Builtins
 
 logger = logging.getLogger(__name__)
 
-
 class Interpreter:
     """
     The main interpreter class, responsible for loading the source file and executing the program.
@@ -58,6 +57,17 @@ class Interpreter:
         Executes the currently loaded program, using the provided input stream as standard input.
         """
         logger.info("Executing program")
+
+        self.builtin_classes = {
+            "Object": Builtins.SOLObject,
+            "Integer": Builtins.SOLInteger,
+            "String": Builtins.SOLString,
+            "Nil": Builtins.SOLNil,
+            "True": Builtins.SOLTrue,
+            "False": Builtins.SOLFalse,
+            "Block": Builtins.SOLBlock,
+        }
+
         main_class = None
         for cl in self.current_program.classes:
             if cl.name == "Main":
@@ -73,11 +83,11 @@ class Interpreter:
         if run_method is None:
             ErrorCode.fire(ErrorCode.SEM_MAIN, "Missing run method in Main!")
 
-        self.execute_method(run_method)
+        #self.execute_method(run_method)
 
         # print(self.current_program)
 
-        """
+        
         for stmt in run_method.block.assigns:
             print(f"Assign order={stmt.order}")
             print(f"  target = {stmt.target.name}")
@@ -118,12 +128,30 @@ class Interpreter:
                         print(f"          send: {arg.expr.send.selector}")
 
             print()
-        """
+        
 
     def eval_expr(self, expr, frame):
         # --- LITERAL ---
         if expr.literal is not None:
-            return expr.literal.value
+            lit = expr.literal
+
+            if lit.class_id == "Integer":
+                return Builtins.SOLInteger(int(lit.value))
+
+            if lit.class_id == "String":
+                return Builtins.SOLString(lit.value)
+
+            if lit.class_id == "Nil":
+                return Builtins.nil
+
+            if lit.class_id == "True":
+                return Builtins.SOLTrue()
+
+            if lit.class_id == "False":
+                return Builtins.SOLFalse()
+            
+            if lit.class_id == "class":
+                return lit.value
 
         # --- VAR ---
         if expr.var is not None:
@@ -141,8 +169,24 @@ class Interpreter:
             send = expr.send
             receiver = self.eval_expr(send.receiver, frame)
 
+            args = []
+            for arg in send.args:
+                args.append(self.eval_expr(arg.expr, frame))
+
             # --- new ---
             if send.selector == "new":
+                if receiver in self.builtin_classes:
+                    cls = self.builtin_classes[receiver]
+
+                    if receiver == "Integer":
+                        return cls(0)
+                    if receiver == "String":
+                        return cls("")
+                    if receiver == "Nil":
+                        return Builtins.nil
+
+                    return cls()
+
                 for cl in self.current_program.classes:
                     if receiver == cl.name:
                         return ClassInstance(cl)
@@ -151,8 +195,35 @@ class Interpreter:
             if isinstance(receiver, ClassInstance):
                 method = receiver.find_method(send.selector, self.current_program.classes)
                 if method is None:
-                    return send.selector
-                    ErrorCode.fire(ErrorCode.SEM_UNDEF, "Missing definition of method!")
+                    base_name = receiver.get_base(self.current_program.classes)
+                    builtin_class = self.builtin_classes[base_name]
+                    method_name = send.selector.replace(":", "_")
+                    if method_name == "print":
+                        method_name = "print_"
+
+                    method = getattr(builtin_class(), method_name, None)
+                    if method is not None:
+                        return method(*args)
+
+                    if len(args) == 0:
+                        val = receiver.attributes.get(send.selector)
+                        if val is None:
+                            ErrorCode.fire(ErrorCode.INT_DNU, f"No method or attribute with name '{send.selector}' found!")
+                        return val
+                    elif len(args) == 1:
+                        attr_name = send.selector.rstrip(":")
+                        collision = receiver.find_method(attr_name, self.current_program.classes)
+                        if collision is not None:
+                            ErrorCode.fire(ErrorCode.INT_DNU, f"Attribute '{attr_name}' collides with method")
+                        
+                        base_name = receiver.get_base(self.current_program.classes)
+                        builtin_class = self.builtin_classes[base_name]
+                        if getattr(builtin_class(), attr_name, None) is not None:
+                            ErrorCode.fire(ErrorCode.INT_INST_ATTR, f"Attribute '{attr_name}' collides with builtin method")
+                        receiver.attributes[attr_name] = args[0]
+                        return receiver
+                    else:
+                        ErrorCode.fire(ErrorCode.INT_DNU, "Missing definition of method!")
                 return self.execute_method(method)
             return send.selector
         
@@ -163,8 +234,8 @@ class Interpreter:
             result = self.eval_expr(stmt.expr, frame)
             frame[stmt.target.name] = result
 
-        for name in frame:
-            print(f"{name} = {frame[name]}")
+        #for name in frame:
+        #    print(f"{name} = {frame[name]}")
         return result
 
 class ClassInstance:
@@ -186,7 +257,20 @@ class ClassInstance:
                     current = cl
                     break
         return None
-
+    
+    def get_base(self, all_classes):
+        current = self.cl
+        base_names = {"Object", "Integer", "String", "Nil", "True", "False", "Block"}
+        while current is not None:
+            if current.parent in base_names:
+                return current.parent
+            parent_name = current.parent
+            current = None
+            for cl in all_classes:
+                if cl.name == parent_name:
+                    current = cl
+                    break
+    
     def __repr__(self):
         return f"instance of {self.cl_name}"
     

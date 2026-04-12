@@ -77,10 +77,6 @@ class SOLTrue(SOLBoolean):
     def or_(self, block):
         return self
 
-    def ifTrue_ifFalse_(self, t_block, f_block):
-        return t_block.value()
-
-
 class SOLFalse(SOLBoolean):
     def asString(self):
         return SOLString("false")
@@ -93,9 +89,6 @@ class SOLFalse(SOLBoolean):
 
     def or_(self, block):
         return block.value()
-
-    def ifTrue_ifFalse_(self, t_block, f_block):
-        return f_block.value()
 
 
 # ======================
@@ -164,35 +157,17 @@ class SOLString(SOLObject):
         if not isinstance(other, SOLString):
             return nil
         return SOLString(self.value + other.value)
+    
+    def startsWith_endsBefore_(self, a, b):
+        if not isinstance(a, SOLInteger) or not isinstance(b, SOLInteger):
+            return nil
+        start = a.value
+        end = b.value
+        if end - start <= 0:
+            return SOLString("")
+        if start <= 0 or end <= 0:
+            return nil
+        return SOLString(self.value[start - 1: end - 1])
 
     def length(self):
         return SOLInteger(len(self.value))
-
-
-# ======================
-# BLOCK
-# ======================
-
-class SOLBlock(SOLObject):
-    def __init__(self, interpreter, block_ast, parent_frame):
-        self.interpreter = interpreter
-        self.block_ast = block_ast
-        self.parent_frame = parent_frame
-
-    def isBlock(self):
-        return SOLTrue()
-
-    def value(self):
-        return self.interpreter.execute_block(self.block_ast, self.parent_frame)
-
-    def value_(self, arg):
-        new_frame = dict(self.parent_frame)
-        param = self.block_ast.parameters[0].name
-        new_frame[param] = arg
-        return self.interpreter.execute_block(self.block_ast, new_frame)
-
-    def whileTrue_(self, body_block):
-        result = nil
-        while self.value().value is True:
-            result = body_block.value()
-        return result

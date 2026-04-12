@@ -66,7 +66,6 @@ class Interpreter:
             "Nil": Builtins.SOLNil,
             "True": Builtins.SOLTrue,
             "False": Builtins.SOLFalse,
-            "Block": Builtins.SOLBlock,
         }
 
         main_class = None
@@ -87,51 +86,6 @@ class Interpreter:
 
         main_class_instance = ClassInstance(main_class)
         self.execute_method(run_method, main_class_instance, args=None)
-
-        # print(self.current_program)
-
-        """
-        for stmt in run_method.block.assigns:
-            print(f"Assign order={stmt.order}")
-            print(f"  target = {stmt.target.name}")
-
-            expr = stmt.expr
-            print("  expr:")
-
-            if expr.literal is not None:
-                print(f"    literal: class={expr.literal.class_id}, value={expr.literal.value}")
-
-            elif expr.var is not None:
-                print(f"    var: {expr.var.name}")
-
-            elif expr.f is not None:
-                print(f"    block: arity={expr.block.arity}")
-                print(f"      parameters: {[p.name for p in expr.block.parameters]}")
-                print(f"      assigns: {len(expr.block.assigns)} inner assigns")
-
-            elif expr.send is not None:
-                send = expr.send
-                print(f"    send: selector={send.selector}")
-                print("      receiver:")
-                if send.receiver.var:
-                    print(f"        var: {send.receiver.var.name}")
-                elif send.receiver.literal:
-                    print(f"        literal: {send.receiver.literal.value}")
-                elif send.receiver.send:
-                    print(f"        nested send: {send.receiver.send.selector}")
-
-                print("      args:")
-                for arg in send.args:
-                    print(f"        arg order={arg.order}:")
-                    if arg.expr.literal:
-                        print(f"          literal: {arg.expr.literal.value}")
-                    elif arg.expr.var:
-                        print(f"          var: {arg.expr.var.name}")
-                    elif arg.expr.send:
-                        print(f"          send: {arg.expr.send.selector}")
-
-            print()
-        """
 
     def eval_expr(self, expr, frame, current_class):
         # --- LITERAL ---
@@ -256,12 +210,42 @@ class Interpreter:
                         ErrorCode.fire(ErrorCode.INT_DNU, "Missing definition of method!")
                 return self.execute_method(method, receiver, args)
             
+            # Boolean ifTrue:ifFalse:, and:, or:
+            if isinstance(receiver, (Builtins.SOLTrue, Builtins.SOLFalse)):
+                if send.selector == "ifTrue:ifFalse:" and len(args) == 2:
+                    if isinstance(receiver, Builtins.SOLTrue):
+                        return self.execute_block(args[0], current_class, [])
+                    else:
+                        return self.execute_block(args[1], current_class, [])
+
+            # Integer timesRepeat:
+            if isinstance(receiver, Builtins.SOLInteger):
+                if send.selector == "timesRepeat:" and len(args) == 1:
+                    result = Builtins.nil
+                    for i in range(1, receiver.value + 1):
+                        result = self.execute_block(args[0], current_class, [Builtins.SOLInteger(i)])
+                    return result
+
+            # Block whileTrue:
+            if isinstance(receiver, BlockInstance):
+                if send.selector == "whileTrue:" and len(args) == 1:
+                    result = Builtins.nil
+                    while True:
+                        cond = self.execute_block(receiver, current_class, [])
+                        if not isinstance(cond, Builtins.SOLTrue):
+                            break
+                        result = self.execute_block(args[0], current_class, [])
+                    return result
+
             if isinstance(receiver, (Builtins.SOLString, Builtins.SOLInteger, 
                           Builtins.SOLTrue, Builtins.SOLFalse, 
                           Builtins.SOLNil, Builtins.SOLObject)):
                 method_name = send.selector.replace(":", "_")
                 if send.selector == "print":
                     method_name = "print_"
+
+                if send.selector == "not":
+                    method_name = "not_"
                 
                 method = getattr(receiver, method_name, None)
                 if method is not None:
@@ -331,12 +315,14 @@ class ClassInstance:
         if start_class is None:
             return None
         
-        start_parent = start_class
+        start_parent = start_class.parent
 
         parent_class = None
+        
         for cl in all_classes:
             if cl.name == start_parent:
                 parent_class = cl
+                break
 
         while parent_class is not None:
             for method in parent_class.methods:

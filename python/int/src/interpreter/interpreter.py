@@ -83,9 +83,11 @@ class Interpreter:
         if run_method is None:
             ErrorCode.fire(ErrorCode.SEM_MAIN, "Missing run method in Main!")
 
-        #self.execute_method(run_method)
 
-        print(self.current_program)
+        main_class_instance = ClassInstance(main_class)
+        self.execute_method(run_method, main_class_instance)
+
+        # print(self.current_program)
 
         """
         for stmt in run_method.block.assigns:
@@ -130,7 +132,7 @@ class Interpreter:
             print()
         """
 
-    def eval_expr(self, expr, frame):
+    def eval_expr(self, expr, frame, current_class):
         # --- LITERAL ---
         if expr.literal is not None:
             lit = expr.literal
@@ -156,6 +158,12 @@ class Interpreter:
         # --- VAR ---
         if expr.var is not None:
             name = expr.var.name
+            if name == "self":
+                return frame["self"]
+            
+            if name == "super":
+                return frame["super"]
+
             if name not in frame:
                 ErrorCode.fire(ErrorCode.SEM_UNDEF, "Missing definition of variable!")
             return frame[name]
@@ -167,11 +175,14 @@ class Interpreter:
         # --- SEND ---
         if expr.send is not None:
             send = expr.send
-            receiver = self.eval_expr(send.receiver, frame)
-
+            is_super = False
+            if send.receiver.var is not None and send.receiver.var.name == "super":
+                is_super = True
+            receiver = self.eval_expr(send.receiver, frame, current_class)
+            
             args = []
             for arg in send.args:
-                args.append(self.eval_expr(arg.expr, frame))
+                args.append(self.eval_expr(arg.expr, frame, current_class))
 
             # --- new ---
             if send.selector == "new":
@@ -193,7 +204,10 @@ class Interpreter:
                 ErrorCode.fire(ErrorCode.SEM_UNDEF, "Missing definition of class!")
 
             if isinstance(receiver, ClassInstance):
-                method = receiver.find_method(send.selector, self.current_program.classes)
+                if is_super is True:
+                    method = receiver.find_method_from_parent(send.selector, self.current_program.classes)
+                else:
+                    method = receiver.find_method(send.selector, self.current_program.classes)
                 if method is None:
                     base_name = receiver.get_base(self.current_program.classes)
                     builtin_class = self.builtin_classes[base_name]
@@ -227,11 +241,13 @@ class Interpreter:
                 return self.execute_method(method)
             return send.selector
         
-    def execute_method(self, method):
+    def execute_method(self, method, current_class):
         result = None
         frame = {}
+        frame["self"] = current_class
+        frame["super"] = current_class
         for stmt in method.block.assigns:
-            result = self.eval_expr(stmt.expr, frame)
+            result = self.eval_expr(stmt.expr, frame, current_class)
             frame[stmt.target.name] = result
 
         #for name in frame:
@@ -255,6 +271,25 @@ class ClassInstance:
             for cl in all_classes:
                 if cl.name == parent:
                     current = cl
+                    break
+        return None
+    
+    def find_method_from_parent(self, selector, all_classes):
+        start_parent = self.cl.parent
+        parent_class = None
+        for cl in all_classes:
+            if cl.name == start_parent:
+                parent_class = cl
+
+        while parent_class is not None:
+            for method in parent_class.methods:
+                if method.selector == selector:
+                    return method
+            parent = parent_class.parent
+            parent_class = None
+            for cl in all_classes:
+                if cl.name == parent:
+                    parent_class = cl
                     break
         return None
     

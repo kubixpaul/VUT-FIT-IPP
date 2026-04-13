@@ -17,7 +17,7 @@ from pydantic import ValidationError
 
 from interpreter.error_codes import ErrorCode
 from interpreter.exceptions import InterpreterError
-from interpreter.input_model import Program
+from interpreter.input_model import Program, Block
 import interpreter.built_in as Builtins
 
 logger = logging.getLogger(__name__)
@@ -56,7 +56,6 @@ class Interpreter:
         """
         Executes the currently loaded program, using the provided input stream as standard input.
         """
-        logger.info("Executing program")
         self.input_io = input_io
 
         self.builtin_classes = {
@@ -65,7 +64,7 @@ class Interpreter:
             "String": Builtins.SOLString,
             "Nil": Builtins.SOLNil,
             "True": Builtins.SOLTrue,
-            "False": Builtins.SOLFalse,
+            "False": Builtins.SOLFalse
         }
 
         main_class = None
@@ -74,14 +73,20 @@ class Interpreter:
                 main_class = cl
                 break
         if main_class is None:
-            ErrorCode.fire(ErrorCode.SEM_MAIN, "Missing Main class in program!")
+            raise InterpreterError(ErrorCode.SEM_MAIN, "Missing Main class in program!")
         run_method = None
         for method in main_class.methods:
             if method.selector == "run":
                 run_method = method
                 break
         if run_method is None:
-            ErrorCode.fire(ErrorCode.SEM_MAIN, "Missing run method in Main!")
+            raise InterpreterError(ErrorCode.SEM_MAIN, "Missing run method in Main!")
+        
+        seen_classes = set()
+        for cl in self.current_program.classes:
+            if cl.name in seen_classes:
+                raise InterpreterError(ErrorCode.SEM_ERROR, f"Duplicate class definition: {cl.name}")
+            seen_classes.add(cl.name)
 
 
         main_class_instance = ClassInstance(main_class)
@@ -118,33 +123,37 @@ class Interpreter:
         if name in ("self", "super"):
             return frame[name]
         if name not in frame:
-            ErrorCode.fire(ErrorCode.SEM_UNDEF, f"Undefined variable: {name}")
+            raise InterpreterError(ErrorCode.SEM_UNDEF, f"Undefined variable: {name}!")
         return frame[name]
     
     def eval_send(self, send, frame, current_class):
-        is_super = (
-            send.receiver.var is not None and
-            send.receiver.var.name == "super"
-        )
+        is_super = (send.receiver.var is not None and send.receiver.var.name == "super")
         receiver = self.eval_expr(send.receiver, frame, current_class)
         args = [self.eval_expr(arg.expr, frame, current_class) for arg in send.args]
 
         # class messages
         if isinstance(receiver, str):
-            return self.dispatch_class_message(receiver, send.selector, args)
+            return self.dispatch_class_message(receiver, send.selector, args, frame)
 
         # block messages
         if isinstance(receiver, BlockInstance):
             return self.dispatch_block(receiver, send.selector, args, current_class)
+
+        if isinstance(receiver, (ClassInstance, ObjectInstance)):
+            return self.dispatch_instance(receiver, send.selector, args, current_class, is_super)
 
         # instance messages
         if isinstance(receiver, ClassInstance):
             return self.dispatch_instance(receiver, send.selector, args, current_class, is_super)
 
         # builtin messages
-        return self.dispatch_builtin(receiver, send.selector, args, current_class)
+        result = self.dispatch_builtin(receiver, send.selector, args, current_class)
+        if result is not None:
+            return result
+
+        raise InterpreterError(ErrorCode.INT_DNU, f"Does not understand message '{send.selector}'!")
     
-    def dispatch_class_message(self, class_name, selector, args):
+    def dispatch_class_message(self, class_name, selector, args, frame):
         if selector == "new":
             if class_name in self.builtin_classes:
                 cls = self.builtin_classes[class_name]
@@ -154,13 +163,21 @@ class Interpreter:
                     return cls("")
                 if class_name == "Nil":
                     return Builtins.nil
+                if class_name == "Object":
+                    return ObjectInstance()
                 return cls()
+            
+            if class_name == "Block":
+                empty_block = Block(arity=0, parameters=[], assigns=[])
+                return BlockInstance(empty_block, frame)
+            
             # User defined classes
             for cl in self.current_program.classes:
                 if class_name == cl.name:
                     return ClassInstance(cl)
 
-        # Missing 'from:' functionality
+        if selector == "from:" and len(args) == 1:
+            return self.dispatch_from(class_name, args[0])
 
         if selector == "read" and class_name == "String":
             line = self.input_io.readline()
@@ -168,13 +185,60 @@ class Interpreter:
                 line = line[:-1]
             return Builtins.SOLString(line)
         
+    def dispatch_from(self, class_name, obj):
+        if class_name == "Integer":
+            if not hasattr(obj, "value") or not isinstance(obj.value, int):
+                raise InterpreterError(ErrorCode.INT_INVALID_ARG, "from: requires Integer-compatible object")
+            return Builtins.SOLInteger(obj.value)
+        
+        if class_name == "String":
+            if not hasattr(obj, "value") or not isinstance(obj.value, str):
+                raise InterpreterError(ErrorCode.INT_INVALID_ARG, "from: requires String-compatible object")
+            return Builtins.SOLString(obj.value)
+        
+        if class_name == "Nil":
+            return Builtins.nil
+        
+        if class_name == "Object":
+            new_inst = ObjectInstance()
+            if isinstance(obj, (ClassInstance, ObjectInstance)):
+                new_inst.attributes = dict(obj.attributes)
+            return new_inst
+        
+        for cl in self.current_program.classes:
+            if class_name == cl.name:
+                new_inst = ClassInstance(cl)
+                if isinstance(obj, ClassInstance):
+                    new_inst.attributes = dict(obj.attributes)
+                if hasattr(obj, "value"):
+                    new_inst.value = obj.value
+                return new_inst
+        
+        raise InterpreterError(ErrorCode.SEM_UNDEF, f"Unknown class: {class_name}")
+        
     def dispatch_block(self, receiver, selector, args, current_class):
+        if selector == "isBlock":
+            return Builtins.SOLTrue()
+        
+        if selector == "whileTrue:" and len(args) == 1:
+            result = Builtins.nil
+            while True:
+                cond = self.execute_block(receiver, current_class, [])
+                if not isinstance(cond, Builtins.SOLTrue):
+                    break
+                result = self.execute_block(args[0], current_class, [])
+            return result
+        
         if selector == "value":
             return self.execute_block(receiver, current_class, [])
+        
         if selector == "value:" and len(args) == 1:
             return self.execute_block(receiver, current_class, args)
+        
         if selector == "value:value:" and len(args) == 2:
             return self.execute_block(receiver, current_class, args)
+        
+        return Builtins.nil
         
     def dispatch_instance(self, receiver, selector, args, current_class, is_super):
         if is_super:
@@ -187,24 +251,33 @@ class Interpreter:
         
         base_name = receiver.get_base(self.current_program.classes)
         builtin_class = self.builtin_classes[base_name]
-        result = self.try_builtin(builtin_class(), selector, args, current_class)
+        result = self.dispatch_builtin(builtin_class(), selector, args, current_class)
         if result is not None:
             return result
         
         return self.attribute_fallback(receiver, selector, args)
     
     def dispatch_builtin(self, receiver, selector, args, current_class):
-        result = self.try_builtin(receiver, selector, args, current_class)
-        if result is not None:
-            return result
-
-    def try_builtin(self, receiver, selector, args, current_class):
         # Boolean ifTrue ifFalse
         if isinstance(receiver, (Builtins.SOLTrue, Builtins.SOLFalse)):
             if selector == "ifTrue:ifFalse:" and len(args) == 2:
                 if isinstance(receiver, Builtins.SOLTrue):
                     return self.execute_block(args[0], current_class, [])
                 return self.execute_block(args[1], current_class, [])
+    
+        # Boolean and: with Block on left side
+        if selector == "and:" and len(args) == 1:
+            if isinstance(receiver, Builtins.SOLFalse):
+                return Builtins.SOLFalse()
+            if isinstance(args[0], BlockInstance):
+                return self.execute_block(args[0], current_class, [])
+            
+        # Boolean or: with Block on left side
+        if selector == "or:" and len(args) == 1:
+            if isinstance(receiver, Builtins.SOLTrue):
+                return Builtins.SOLTrue()
+            if isinstance(args[0], BlockInstance):
+                return self.execute_block(args[0], current_class, [])
 
         # Integer timesRepeat:
         if isinstance(receiver, Builtins.SOLInteger):
@@ -213,6 +286,9 @@ class Interpreter:
                 for i in range(1, receiver.value + 1):
                     result = self.execute_block(args[0], current_class, [Builtins.SOLInteger(i)])
                 return result
+            
+        if selector == "isBlock":
+            return Builtins.SOLFalse()
 
         method_name = selector.replace(":", "_")
         if selector == "print":
@@ -231,23 +307,24 @@ class Interpreter:
         if len(args) == 0:
             val = receiver.attributes.get(selector)
             if val is None:
-                ErrorCode.fire(ErrorCode.INT_DNU, f"No method or attribute '{selector}'!")
+                raise InterpreterError(ErrorCode.INT_DNU, f"No method or attribute '{selector}'!")
             return val
 
         if len(args) == 1:
             attr_name = selector.rstrip(":")
             collision = receiver.find_method(attr_name, self.current_program.classes)
             if collision is not None:
-                ErrorCode.fire(ErrorCode.INT_INST_ATTR, f"Attribute '{attr_name}' collides with method!")
+                raise InterpreterError(ErrorCode.INT_INST_ATTR, f"Attribute '{attr_name}' collides with method!")
             base_name = receiver.get_base(self.current_program.classes)
             builtin_class = self.builtin_classes[base_name]
 
             if getattr(builtin_class(), attr_name, None) is not None:
-                ErrorCode.fire(ErrorCode.INT_INST_ATTR, f"Attribute '{attr_name}' collides with builtin method!")
+                raise InterpreterError(ErrorCode.INT_INST_ATTR, f"Attribute '{attr_name}' collides with builtin method!")
+                
             receiver.attributes[attr_name] = args[0]
             return receiver
         
-        ErrorCode.fire(ErrorCode.INT_DNU, f"No method '{selector}!'")
+        raise InterpreterError(ErrorCode.INT_DNU, f"No method '{selector}!'")
         
     def execute_method(self, method, current_class, args):
         if args is None:
@@ -268,7 +345,7 @@ class Interpreter:
         
         params = block_instance.block.parameters
         if len(params) != len(args):
-            ErrorCode.fire(ErrorCode.INT_DNU, f"Block arity mismatch!")
+            raise InterpreterError(ErrorCode.INT_DNU, f"Block arity mismatch!")
         
         param_names = {p.name for p in params}
         for param, arg in zip(params, args):
@@ -277,7 +354,7 @@ class Interpreter:
         result = Builtins.nil
         for stmt in block_instance.block.assigns:
             if stmt.target.name in param_names:
-                ErrorCode.fire(ErrorCode.SEM_COLLISION, f"Assignment to parameter {stmt.target.name}")
+                raise InterpreterError(ErrorCode.SEM_COLLISION, f"Assignment to parameter {stmt.target.name}")
             result = self.eval_expr(stmt.expr, frame, current_class)
             frame[stmt.target.name] = result
         return result
@@ -305,7 +382,7 @@ class ClassInstance:
     def find_method_from_parent(self, selector, all_classes, from_class):
         start_class = None
         for cl in all_classes:
-            if cl.name == from_class:
+            if cl.name == from_class.cl_name:
                 start_class = cl
                 break
         
@@ -336,24 +413,39 @@ class ClassInstance:
     def get_base(self, all_classes):
         current = self.cl
         base_names = {"Object", "Integer", "String", "Nil", "True", "False", "Block"}
+
         while current is not None:
             if current.parent in base_names:
                 return current.parent
+            
             parent_name = current.parent
             current = None
+
             for cl in all_classes:
                 if cl.name == parent_name:
                     current = cl
                     break
-    
-    def __repr__(self):
-        return f"instance of {self.cl_name}"
+        
+        return "Object"
     
 class BlockInstance:
     def __init__(self, block, parent_frame):
         self.block = block
         self.parent_frame = parent_frame
-
-    def __repr__(self):
-        return "<block>"
     
+class ObjectInstance:
+    def __init__(self) -> None:
+        self.cl_name = "Object"
+        self.attributes: dict = {}
+
+    def find_method(self, selector: str, all_classes: list) -> None:
+        return None
+
+    def find_method_from_parent(self, selector: str, all_classes: list, from_class: object) -> None:
+        return None
+
+    def get_base(self, all_classes: list) -> str:
+        return "Object"
+
+    def __repr__(self) -> str:
+        return "instance of Object"

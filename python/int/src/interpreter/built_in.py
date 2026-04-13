@@ -1,4 +1,5 @@
 from interpreter.error_codes import ErrorCode
+from interpreter.exceptions import InterpreterError
 
 
 # ======================
@@ -71,8 +72,8 @@ class SOLTrue(SOLBoolean):
     def not_(self):
         return SOLFalse()
 
-    def and_(self, block):
-        return block.value()
+    def and_(self, other):
+        return other.value()
 
     def or_(self, block):
         return self
@@ -87,8 +88,8 @@ class SOLFalse(SOLBoolean):
     def and_(self, block):
         return self
 
-    def or_(self, block):
-        return block.value()
+    def or_(self, other):
+        return other.value()
 
 
 # ======================
@@ -113,7 +114,7 @@ class SOLInteger(SOLObject):
 
     def divBy_(self, other):
         if other.value == 0:
-            ErrorCode.fire(ErrorCode.INT_INVALID_ARG, "Division by zero!")
+            raise InterpreterError(ErrorCode.INT_INVALID_ARG, "Division by zero!")
         return SOLInteger(self.value // other.value)
 
     def greaterThan_(self, other):
@@ -124,6 +125,12 @@ class SOLInteger(SOLObject):
 
     def asInteger(self):
         return self
+    
+    def equalTo_(self, other):
+        if not isinstance(other, SOLInteger):
+            return SOLFalse()
+        return SOLTrue() if self.value == other.value else SOLFalse()
+
 
 
 # ======================
@@ -142,7 +149,10 @@ class SOLString(SOLObject):
         return self
 
     def equalTo_(self, other):
+        if not isinstance(other, SOLString):
+            return SOLFalse()
         return SOLTrue() if self.value == other.value else SOLFalse()
+
 
     def asString(self):
         return self

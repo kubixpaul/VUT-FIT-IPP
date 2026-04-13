@@ -14,11 +14,11 @@
  *                  module based on its Python counterpart.
  */
 
-import { existsSync, lstatSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, lstatSync, writeFileSync, readdirSync } from "node:fs";
+import { dirname, resolve, join, basename } from "node:path";
 import { parseArgs } from "node:util";
 
-import { TestReport } from "./models.js";
+import { TestReport, TestCaseDefinitionFile } from "./models.js";
 
 import { pino } from "pino";
 
@@ -194,6 +194,28 @@ function parseArguments(): CliArguments {
   }
 
   return args;
+}
+
+function find_tests(test_dir: string, recursive: boolean): TestCaseDefinitionFile[] {
+  const result: TestCaseDefinitionFile[] = [];
+      for (const entry of readdirSync(test_dir)) {
+        const full = join(test_dir, entry);
+        if (lstatSync(full).isDirectory() && recursive) {
+          result.push(...find_tests(full, recursive));
+        }
+        else if (entry.endsWith(".test")) {
+          const name = basename(entry, ".test");
+          const inFile = join(test_dir, name + ".in");
+          const outFile = join(test_dir, name + ".out");
+          result.push(new TestCaseDefinitionFile({
+            name,
+            test_source_path: full,
+            stdin_file: existsSync(inFile) ? inFile : null,
+            expected_stdout_file: existsSync(outFile) ? outFile : null,
+          }));
+        }
+      }
+      return result;
 }
 
 function main(): void {

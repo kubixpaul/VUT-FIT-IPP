@@ -9,13 +9,8 @@
       "description": "Test jednoducheho programu",
       "category": "BASIC",
       "points": 2,
-      "expected_parser_exit_codes": [
-        0
-      ],
-      "expected_interpreter_exit_codes": [
-        0,
-        42
-      ]
+      "expected_parser_exit_codes": [0],
+      "expected_interpreter_exit_codes": [0, 42]
     }
   ],
   "unexecuted": {},

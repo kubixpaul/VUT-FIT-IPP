@@ -14,11 +14,13 @@
  *                  module based on its Python counterpart.
  */
 
-import { existsSync, lstatSync, writeFileSync, readdirSync } from "node:fs";
+import { existsSync, lstatSync, writeFileSync, readdirSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { dirname, resolve, join, basename } from "node:path";
 import { parseArgs } from "node:util";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 
-import { TestReport, TestCaseDefinitionFile } from "./models.js";
+import { TestReport, TestCaseDefinitionFile, TestCaseDefinition, UnexecutedReason, UnexecutedReasonCode, TestCaseType, TestCaseReport, CategoryReport, TestResult } from "./models.js";
 
 import { pino } from "pino";
 
@@ -218,6 +220,140 @@ function find_tests(test_dir: string, recursive: boolean): TestCaseDefinitionFil
       return result;
 }
 
+function parseTest(file: TestCaseDefinitionFile): TestCaseDefinition | UnexecutedReason {
+  let content: string;
+  try { content = readFileSync(file.test_source_path, "utf8"); }
+  catch { return new UnexecutedReason(UnexecutedReasonCode.MALFORMED_TEST_CASE_FILE, "Cannot read"); }
+
+  let description: string | null = null;
+    let category: string | null = null;
+    let points = 1;
+    const parserCodes: number[] = [];
+    const interpCodes: number[] = [];
+
+    for (const line of content.split("\n")) {
+      const t = line.trim();
+      if (t.startsWith("***"))
+        description = t.slice(3).trim();
+      else if (t.startsWith("+++"))
+        category = t.slice(3).trim();
+      else if (t.startsWith("!C!")) 
+        parserCodes.push(parseInt(t.slice(3).trim()));
+      else if (t.startsWith("!I!"))
+        interpCodes.push(parseInt(t.slice(3).trim()));
+      else if (t.startsWith(">>>"))
+        points = parseFloat(t.slice(3).trim());
+    }
+
+    if (!category) 
+      return new UnexecutedReason(UnexecutedReasonCode.MALFORMED_TEST_CASE_FILE, "Missing category");
+
+    let testType: TestCaseType;
+    if (parserCodes.length > 0 && interpCodes.length === 0) 
+      testType = TestCaseType.PARSE_ONLY;
+    else if (interpCodes.length > 0 && parserCodes.length === 0)
+      testType = TestCaseType.EXECUTE_ONLY;
+    else if (parserCodes.length > 0 && interpCodes.length > 0)
+      testType = TestCaseType.COMBINED;
+    else 
+      return new UnexecutedReason(UnexecutedReasonCode.CANNOT_DETERMINE_TYPE, "Cannot determine type");
+
+    return new TestCaseDefinition({
+        name: file.name, 
+        test_source_path: file.test_source_path,
+        stdin_file: file.stdin_file, 
+        expected_stdout_file: file.expected_stdout_file,
+        test_type: testType, 
+        description, 
+        category, 
+        points,
+        expected_parser_exit_codes: parserCodes.length > 0 ? parserCodes : null,
+        expected_interpreter_exit_codes: interpCodes.length > 0 ? interpCodes : null,
+      });
+}
+
+function matches(value: string | null, filters: string[] | null, regexFilters: boolean): boolean {
+  if (!filters || filters.length === 0) 
+    return false;
+  if (value === null) 
+    return false;
+  return filters.some(f => regexFilters ? new RegExp(f.trim()).test(value) : value === f.trim());
+}
+
+function should_run(test: TestCaseDefinition, args: CliArguments): boolean {
+  if (matches(test.name, args.exclude_test, args.regex_filters) || matches(test.category, args.exclude_category, args.regex_filters)) 
+    return false;
+  if (matches(test.name, args.exclude, args.regex_filters) || matches(test.category, args.exclude, args.regex_filters)) 
+    return false;
+  const hasInclude = (args.include?.length ?? 0) > 0 || (args.include_category?.length ?? 0) > 0 || (args.include_test?.length ?? 0) > 0;
+  if (!hasInclude) return true;
+  return matches(test.name, args.include_test, args.regex_filters) || matches(test.category, args.include_category, args.regex_filters) ||
+         matches(test.name, args.include, args.regex_filters) || matches(test.category, args.include, args.regex_filters);
+}
+
+function get_source(file: TestCaseDefinitionFile): string {
+    const lines = readFileSync(file.test_source_path, "utf8").split("\n");
+    const idx = lines.findIndex(l => l.trim() === "");
+    return idx === -1 ? "" : lines.slice(idx + 1).join("\n");
+  }
+
+function run_test(test: TestCaseDefinition): TestCaseReport {
+    const SOL2XML = (process.env['SOL2XML'] || "/home/kubix/projects/ipp/sol2xml/sol_to_xml.py").trim();
+    const INTERP = (process.env['INTERPRETER'] || "python3").trim();
+    const INTERP_SCRIPT = (process.env['INTERPRETER_SCRIPT'] || "/home/.../tester/python/int/src/solint.py").trim();
+
+
+    let xmlPath: string | null = null;
+    let parserExitCode: number | null = null;
+    let parserStdout: string | null = null;
+    let parserStderr: string | null = null;
+    let tmpDir: string | null = null;
+
+    if (test.test_type === TestCaseType.PARSE_ONLY || test.test_type === TestCaseType.COMBINED) {
+      const pr = spawnSync(SOL2XML, [], { input: get_source(test) });
+      parserExitCode = pr.status ?? -1;
+      parserStdout = pr.stdout?.toString("utf8") ?? null;
+      parserStderr = pr.stderr?.toString("utf8") ?? null;
+
+      if (!test.expected_parser_exit_codes!.includes(parserExitCode)) {
+        return new TestCaseReport(TestResult.UNEXPECTED_PARSER_EXIT_CODE, parserExitCode, null, parserStdout, parserStderr, null, null, null);
+      }
+      if (test.test_type === TestCaseType.PARSE_ONLY) {
+        return new TestCaseReport(TestResult.PASSED, parserExitCode, null, parserStdout, parserStderr, null, null, null);
+      }
+      tmpDir = mkdtempSync(join(tmpdir(), "sol26-"));
+      xmlPath = join(tmpDir, "program.xml");
+      writeFileSync(xmlPath, pr.stdout ?? Buffer.alloc(0));
+    }
+
+    if (test.test_type === TestCaseType.EXECUTE_ONLY) {
+      xmlPath = test.test_source_path;
+    }
+
+    const interpArgs = [INTERP_SCRIPT, "--source", xmlPath!];
+    if (test.stdin_file) interpArgs.push("--input", test.stdin_file);
+
+    const ir = spawnSync(INTERP, interpArgs);
+    if (tmpDir) rmSync(tmpDir, { recursive: true });
+
+    const interpExitCode = ir.status ?? -1;
+    const interpStdout = ir.stdout?.toString("utf8") ?? null;
+    const interpStderr = ir.stderr?.toString("utf8") ?? null;
+
+    if (!test.expected_interpreter_exit_codes!.includes(interpExitCode)) {
+      return new TestCaseReport(TestResult.UNEXPECTED_INTERPRETER_EXIT_CODE, parserExitCode, interpExitCode, parserStdout, parserStderr, interpStdout, interpStderr, null);
+    }
+
+    if (test.expected_stdout_file !== null && interpExitCode === 0) {
+      const diff = spawnSync("diff", ["-", test.expected_stdout_file], { input: interpStdout ?? "", encoding: "utf8" });
+      if (diff.status !== 0) {
+        return new TestCaseReport(TestResult.INTERPRETER_RESULT_DIFFERS, parserExitCode, interpExitCode, parserStdout, parserStderr, interpStdout, interpStderr, diff.stdout ?? null);
+      }
+    }
+
+    return new TestCaseReport(TestResult.PASSED, parserExitCode, interpExitCode, parserStdout, parserStderr, interpStdout, interpStderr, null);
+  }
+
 function main(): void {
   /**
    * The main entry point for the SOL26 integration testing script.
@@ -239,11 +375,54 @@ function main(): void {
     logger.level = "info";
   }
 
-  // TODO: Your code for discovering and executing the test cases goes here.
+  const files = find_tests(args.tests_dir, args.recursive);
+  const discovered: TestCaseDefinition[] = [];
+  const unexecuted: Record<string, UnexecutedReason> = {};
 
-  // Example of how to write the final report:
-  const report = new TestReport({ discovered_test_cases: [], unexecuted: {}, results: {} });
+  for (const file of files) {
+      const result = parseTest(file);
+      if (result instanceof TestCaseDefinition) 
+        discovered.push(result);
+      else 
+        unexecuted[file.name] = result;
+    }
+
+  const categoryTotals: Record<string, { total: number; passed: number; tests: Record<string, TestCaseReport> }> = {};
+
+  for (const test of discovered) {
+    if (args.dry_run) continue;
+ 
+    if (!should_run(test, args)) {
+      unexecuted[test.name] = new UnexecutedReason(UnexecutedReasonCode.FILTERED_OUT);
+      continue;
+    }
+
+    let test_report: TestCaseReport;
+    try { test_report = run_test(test); }
+    catch (e) { unexecuted[test.name] = new UnexecutedReason(UnexecutedReasonCode.CANNOT_EXECUTE, String(e)); continue; }
+
+    const cat = test.category ?? "<unknown>";
+    if (!categoryTotals[cat]) 
+      categoryTotals[cat] = { total: 0, passed: 0, tests: {} };
+    categoryTotals[cat].total += test.points;
+    if (test_report.result === TestResult.PASSED) categoryTotals[cat].passed += test.points;
+    categoryTotals[cat].tests[test.name] = test_report;
+
+  }
+
+  const results: Record<string, CategoryReport> = {};
+  for (const [cat, data] of Object.entries(categoryTotals)) {
+    results[cat] = new CategoryReport(data.total, data.passed, data.tests);
+  }
+
+  const report = new TestReport({
+    discovered_test_cases: discovered,
+    unexecuted,
+    results: {},
+  });
+  
   writeResult(report, args.output);
+  
 }
 
 main();

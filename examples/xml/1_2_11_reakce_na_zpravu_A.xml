@@ -1,245 +1,71 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <program language="SOL26">
-<class name="Main" parent="Object">
-<method selector="run">
-<block arity="0">
 
-<!-- String print -->
-<assign order="1"><var name="_"/><expr>
-<send selector="print"><expr><literal class="String" value="=== String tests ===&#10;"/></expr></send>
-</expr></assign>
+  <class name="A" parent="Object">
+    <method selector="m">
+      <block arity="0">
+        <assign order="1">
+          <var name="_"/>
+          <expr>
+            <send selector="print">
+              <expr><literal class="String" value="A"/></expr>
+            </send>
+          </expr>
+        </assign>
+      </block>
+    </method>
+  </class>
 
-<!-- String concatenateWith: -->
-<assign order="2"><var name="s1"/><expr><literal class="String" value="hello "/></expr></assign>
-<assign order="3"><var name="s2"/><expr><literal class="String" value="world"/></expr></assign>
-<assign order="4"><var name="s3"/><expr>
-<send selector="concatenateWith:">
-<expr><var name="s1"/></expr>
-<arg order="1"><expr><var name="s2"/></expr></arg>
-</send>
-</expr></assign>
-<assign order="5"><var name="_"/><expr>
-<send selector="print"><expr><var name="s3"/></expr></send>
-</expr></assign>
-<assign order="6"><var name="_"/><expr>
-<send selector="print"><expr><literal class="String" value="&#10;"/></expr></send>
-</expr></assign>
+  <class name="B" parent="A">
+    <method selector="m">
+      <block arity="0">
 
-<!-- String length -->
-<assign order="7"><var name="len"/><expr>
-<send selector="length"><expr><literal class="String" value="hello"/></expr></send>
-</expr></assign>
-<assign order="8"><var name="_"/><expr>
-<send selector="print">
-<expr><send selector="asString"><expr><var name="len"/></expr></send></expr>
-</send>
-</expr></assign>
-<assign order="9"><var name="_"/><expr>
-<send selector="print"><expr><literal class="String" value="&#10;"/></expr></send>
-</expr></assign>
+        <assign order="1">
+          <var name="_"/>
+          <expr>
+            <send selector="m">
+              <expr><var name="super"/></expr>
+            </send>
+          </expr>
+        </assign>
 
-<!-- String startsWith:endsBefore: -->
-<assign order="10"><var name="sub"/><expr>
-<send selector="startsWith:endsBefore:">
-<expr><literal class="String" value="hello"/></expr>
-<arg order="1"><expr><literal class="Integer" value="2"/></expr></arg>
-<arg order="2"><expr><literal class="Integer" value="4"/></expr></arg>
-</send>
-</expr></assign>
-<assign order="11"><var name="_"/><expr>
-<send selector="print"><expr><var name="sub"/></expr></send>
-</expr></assign>
-<assign order="12"><var name="_"/><expr>
-<send selector="print"><expr><literal class="String" value="&#10;"/></expr></send>
-</expr></assign>
+        <assign order="2">
+          <var name="_"/>
+          <expr>
+            <send selector="print">
+              <expr><literal class="String" value="B"/></expr>
+            </send>
+          </expr>
+        </assign>
 
-<!-- String asInteger -->
-<assign order="13"><var name="n"/><expr>
-<send selector="asInteger"><expr><literal class="String" value="42"/></expr></send>
-</expr></assign>
-<assign order="14"><var name="_"/><expr>
-<send selector="print">
-<expr><send selector="asString"><expr><var name="n"/></expr></send></expr>
-</send>
-</expr></assign>
-<assign order="15"><var name="_"/><expr>
-<send selector="print"><expr><literal class="String" value="&#10;"/></expr></send>
-</expr></assign>
+      </block>
+    </method>
+  </class>
 
-<!-- String equalTo: -->
-<assign order="16"><var name="eq"/><expr>
-<send selector="equalTo:">
-<expr><literal class="String" value="hello"/></expr>
-<arg order="1"><expr><literal class="String" value="hello"/></expr></arg>
-</send>
-</expr></assign>
-<assign order="17"><var name="_"/><expr>
-<send selector="print">
-<expr><send selector="asString"><expr><var name="eq"/></expr></send></expr>
-</send>
-</expr></assign>
-<assign order="18"><var name="_"/><expr>
-<send selector="print"><expr><literal class="String" value="&#10;"/></expr></send>
-</expr></assign>
+  <class name="Main" parent="Object">
+    <method selector="run">
+      <block arity="0">
 
-<!-- Integer tests -->
-<assign order="19"><var name="_"/><expr>
-<send selector="print"><expr><literal class="String" value="=== Integer tests ===&#10;"/></expr></send>
-</expr></assign>
+        <assign order="1">
+          <var name="b"/>
+          <expr>
+            <send selector="new">
+              <expr><literal class="class" value="B"/></expr>
+            </send>
+          </expr>
+        </assign>
 
-<!-- plus: -->
-<assign order="20"><var name="r"/><expr>
-<send selector="plus:">
-<expr><literal class="Integer" value="3"/></expr>
-<arg order="1"><expr><literal class="Integer" value="4"/></expr></arg>
-</send>
-</expr></assign>
-<assign order="21"><var name="_"/><expr>
-<send selector="print">
-<expr><send selector="asString"><expr><var name="r"/></expr></send></expr>
-</send>
-</expr></assign>
-<assign order="22"><var name="_"/><expr>
-<send selector="print"><expr><literal class="String" value="&#10;"/></expr></send>
-</expr></assign>
+        <assign order="2">
+          <var name="_"/>
+          <expr>
+            <send selector="m">
+              <expr><var name="b"/></expr>
+            </send>
+          </expr>
+        </assign>
 
-<!-- minus: -->
-<assign order="23"><var name="r"/><expr>
-<send selector="minus:">
-<expr><literal class="Integer" value="10"/></expr>
-<arg order="1"><expr><literal class="Integer" value="3"/></expr></arg>
-</send>
-</expr></assign>
-<assign order="24"><var name="_"/><expr>
-<send selector="print">
-<expr><send selector="asString"><expr><var name="r"/></expr></send></expr>
-</send>
-</expr></assign>
-<assign order="25"><var name="_"/><expr>
-<send selector="print"><expr><literal class="String" value="&#10;"/></expr></send>
-</expr></assign>
+      </block>
+    </method>
+  </class>
 
-<!-- multiplyBy: -->
-<assign order="26"><var name="r"/><expr>
-<send selector="multiplyBy:">
-<expr><literal class="Integer" value="6"/></expr>
-<arg order="1"><expr><literal class="Integer" value="7"/></expr></arg>
-</send>
-</expr></assign>
-<assign order="27"><var name="_"/><expr>
-<send selector="print">
-<expr><send selector="asString"><expr><var name="r"/></expr></send></expr>
-</send>
-</expr></assign>
-<assign order="28"><var name="_"/><expr>
-<send selector="print"><expr><literal class="String" value="&#10;"/></expr></send>
-</expr></assign>
-
-<!-- divBy: -->
-<assign order="29"><var name="r"/><expr>
-<send selector="divBy:">
-<expr><literal class="Integer" value="10"/></expr>
-<arg order="1"><expr><literal class="Integer" value="3"/></expr></arg>
-</send>
-</expr></assign>
-<assign order="30"><var name="_"/><expr>
-<send selector="print">
-<expr><send selector="asString"><expr><var name="r"/></expr></send></expr>
-</send>
-</expr></assign>
-<assign order="31"><var name="_"/><expr>
-<send selector="print"><expr><literal class="String" value="&#10;"/></expr></send>
-</expr></assign>
-
-<!-- greaterThan: -->
-<assign order="32"><var name="r"/><expr>
-<send selector="greaterThan:">
-<expr><literal class="Integer" value="5"/></expr>
-<arg order="1"><expr><literal class="Integer" value="3"/></expr></arg>
-</send>
-</expr></assign>
-<assign order="33"><var name="_"/><expr>
-<send selector="print">
-<expr><send selector="asString"><expr><var name="r"/></expr></send></expr>
-</send>
-</expr></assign>
-<assign order="34"><var name="_"/><expr>
-<send selector="print"><expr><literal class="String" value="&#10;"/></expr></send>
-</expr></assign>
-
-<!-- timesRepeat: -->
-<assign order="35"><var name="_"/><expr>
-<send selector="timesRepeat:">
-<expr><literal class="Integer" value="3"/></expr>
-<arg order="1"><expr><block arity="1">
-<parameter name="i" order="1"/>
-<assign order="1"><var name="_"/><expr>
-<send selector="print">
-<expr><send selector="asString"><expr><var name="i"/></expr></send></expr>
-</send>
-</expr></assign>
-<assign order="2"><var name="_"/><expr>
-<send selector="print"><expr><literal class="String" value=" "/></expr></send>
-</expr></assign>
-</block></expr></arg>
-</send>
-</expr></assign>
-<assign order="36"><var name="_"/><expr>
-<send selector="print"><expr><literal class="String" value="&#10;"/></expr></send>
-</expr></assign>
-
-<!-- Boolean tests -->
-<assign order="37"><var name="_"/><expr>
-<send selector="print"><expr><literal class="String" value="=== Boolean tests ===&#10;"/></expr></send>
-</expr></assign>
-
-<!-- not -->
-<assign order="38"><var name="r"/><expr>
-<send selector="not"><expr><literal class="True" value="true"/></expr></send>
-</expr></assign>
-<assign order="39"><var name="_"/><expr>
-<send selector="print">
-<expr><send selector="asString"><expr><var name="r"/></expr></send></expr>
-</send>
-</expr></assign>
-<assign order="40"><var name="_"/><expr>
-<send selector="print"><expr><literal class="String" value="&#10;"/></expr></send>
-</expr></assign>
-
-<!-- ifTrue:ifFalse: -->
-<assign order="41"><var name="_"/><expr>
-<send selector="ifTrue:ifFalse:">
-<expr><literal class="False" value="false"/></expr>
-<arg order="1"><expr><block arity="0">
-<assign order="1"><var name="_"/><expr>
-<send selector="print"><expr><literal class="String" value="true branch"/></expr></send>
-</expr></assign>
-</block></expr></arg>
-<arg order="2"><expr><block arity="0">
-<assign order="1"><var name="_"/><expr>
-<send selector="print"><expr><literal class="String" value="false branch"/></expr></send>
-</expr></assign>
-</block></expr></arg>
-</send>
-</expr></assign>
-<assign order="42"><var name="_"/><expr>
-<send selector="print"><expr><literal class="String" value="&#10;"/></expr></send>
-</expr></assign>
-
-<!-- isNil -->
-<assign order="43"><var name="r"/><expr>
-<send selector="isNil"><expr><literal class="Nil" value="nil"/></expr></send>
-</expr></assign>
-<assign order="44"><var name="_"/><expr>
-<send selector="print">
-<expr><send selector="asString"><expr><var name="r"/></expr></send></expr>
-</send>
-</expr></assign>
-<assign order="45"><var name="_"/><expr>
-<send selector="print"><expr><literal class="String" value="&#10;"/></expr></send>
-</expr></assign>
-
-</block>
-</method>
-</class>
 </program>

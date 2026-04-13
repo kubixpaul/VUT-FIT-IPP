@@ -258,18 +258,17 @@ function parseTest(file: TestCaseDefinitionFile): TestCaseDefinition | Unexecute
     else 
       return new UnexecutedReason(UnexecutedReasonCode.CANNOT_DETERMINE_TYPE, "Cannot determine type");
 
-    return new TestCaseDefinition({
-        name: file.name, 
-        test_source_path: file.test_source_path,
-        stdin_file: file.stdin_file, 
-        expected_stdout_file: file.expected_stdout_file,
-        test_type: testType, 
-        description, 
-        category, 
-        points,
+    try {
+      return new TestCaseDefinition({
+        name: file.name, test_source_path: file.test_source_path,
+        stdin_file: file.stdin_file, expected_stdout_file: file.expected_stdout_file,
+        test_type: testType, description, category, points,
         expected_parser_exit_codes: parserCodes.length > 0 ? parserCodes : null,
         expected_interpreter_exit_codes: interpCodes.length > 0 ? interpCodes : null,
       });
+    } catch (e) {
+      return new UnexecutedReason(UnexecutedReasonCode.MALFORMED_TEST_CASE_FILE, String(e));
+    }
 }
 
 function matches(value: string | null, filters: string[] | null, regexFilters: boolean): boolean {
@@ -300,7 +299,7 @@ function get_source(file: TestCaseDefinitionFile): string {
 function run_test(test: TestCaseDefinition): TestCaseReport {
     const SOL2XML = (process.env['SOL2XML'] || "/home/kubix/projects/ipp/sol2xml/sol_to_xml.py").trim();
     const INTERP = (process.env['INTERPRETER'] || "python3").trim();
-    const INTERP_SCRIPT = (process.env['INTERPRETER_SCRIPT'] || "/home/.../tester/python/int/src/solint.py").trim();
+    const INTERP_SCRIPT = (process.env['INTERPRETER_SCRIPT'] || "/home/.../python/int/src/solint.py").trim();
 
 
     let xmlPath: string | null = null;
@@ -418,7 +417,7 @@ function main(): void {
   const report = new TestReport({
     discovered_test_cases: discovered,
     unexecuted,
-    results: {},
+    results: results,
   });
   
   writeResult(report, args.output);

@@ -1,0 +1,40 @@
+{
+  "discovered_test_cases": [
+    {
+      "name": "example",
+      "test_source_path": "/opt/tests/example.test",
+      "stdin_file": null,
+      "expected_stdout_file": null,
+      "test_type": 2,
+      "description": "Test jednoducheho programu",
+      "category": "BASIC",
+      "points": 2,
+      "expected_parser_exit_codes": [
+        0
+      ],
+      "expected_interpreter_exit_codes": [
+        0,
+        42
+      ]
+    }
+  ],
+  "unexecuted": {},
+  "results": {
+    "BASIC": {
+      "total_points": 2,
+      "passed_points": 2,
+      "test_results": {
+        "example": {
+          "result": "passed",
+          "parser_exit_code": 0,
+          "interpreter_exit_code": 0,
+          "parser_stdout": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<program language=\"SOL26\">\n  <class name=\"Main\" parent=\"Object\">\n    <method selector=\"run\">\n      <block arity=\"0\"/>\n    </method>\n  </class>\n</program>\n",
+          "parser_stderr": "",
+          "interpreter_stdout": "",
+          "interpreter_stderr": "",
+          "diff_output": null
+        }
+      }
+    }
+  }
+}

@@ -1,4 +1,4 @@
-````markdown
+````
 # SOL26 XML Interpreter
 
 A Python interpreter for the **SOL26** language developed as part of the **IPP (Principles of Programming Languages)** course at **VUT FIT**.

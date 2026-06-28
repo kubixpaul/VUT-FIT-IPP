@@ -1,15 +1,16 @@
-````
 # SOL26 XML Interpreter
 
 A Python interpreter for the **SOL26** language developed as part of the **IPP (Principles of Programming Languages)** course at **VUT FIT**.
 
-The project consists of:
+The project contains:
+
 - A **Python interpreter** capable of executing SOL26 programs represented as an XML Abstract Syntax Tree (AST).
 - A **TypeScript** automated testing framework for validating interpreter functionality.
 - A **Dockerized** development and testing environment.
 
 ## Features
 
+- XML AST parsing and validation
 - Execution of the SOL26 instruction set
 - Runtime management of variables, frames, and control flow
 - Specification-compliant runtime error handling
@@ -24,27 +25,28 @@ The project consists of:
 - Docker
 - Ruff
 - MyPy
+- Node.js
 
 ## Repository Structure
 
 ```text
 .
 ├── python/              # Python interpreter
-├── typescript/           # TypeScript testing framework
+├── typescript/          # TypeScript testing framework
 ├── Dockerfile
 └── README.md
 ```
 
 This repository is organized according to the development layout.
 
-If you want to build and test the project as it was submitted, move the contents of the `python/` and `typescript/` directories into the repository root (next to the `Dockerfile`) and remove the now-empty directories. The resulting structure matches the layout required by the course specification.
+To build and test the project using the submitted structure, move the contents of the `python/` and `typescript/` directories into the repository root (next to the `Dockerfile`) and remove the now-empty directories. The resulting structure matches the layout required by the course specification.
 
 ## Docker
 
 The project provides a multi-stage Dockerfile:
 
 | Stage | Purpose |
-|--------|---------|
+|------|---------|
 | `check` | Development environment with Ruff, MyPy, Node.js, and npm |
 | `build-test` | Builds the TypeScript testing framework |
 | `runtime` | Lightweight interpreter image |
@@ -79,13 +81,13 @@ docker run --rm sol26-test
 Install Python dependencies:
 
 ```bash
-pip install -r int/requirements.txt
+pip install -r python/int/requirements.txt
 ```
 
 Install tester dependencies:
 
 ```bash
-cd tester
+cd typescript/tester
 npm install
 npm run build
 ```
@@ -93,7 +95,7 @@ npm run build
 Run the interpreter:
 
 ```bash
-python3 int/src/solint.py
+python3 python/int/src/solint.py
 ```
 
 ## Quality Assurance
@@ -105,7 +107,8 @@ The project includes:
 - Automated integration tests written in TypeScript
 - Dockerized execution environment for reproducible testing
 
-## Result
+## Evaluation
+
+Final course project grade:
 
 **17.5 / 20 points (87.5%)**
-````
